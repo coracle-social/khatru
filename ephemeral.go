@@ -7,7 +7,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-func (rl *Relay) handleEphemeral(ctx context.Context, evt *nostr.Event) error {
+func (rl *Relay) handleEphemeral(ctx context.Context, evt *nostr.Event, isProbe bool) error {
 	for _, reject := range rl.RejectEvent {
 		if reject, msg := reject(ctx, evt); reject {
 			if msg == "" {
@@ -18,8 +18,10 @@ func (rl *Relay) handleEphemeral(ctx context.Context, evt *nostr.Event) error {
 		}
 	}
 
-	for _, oee := range rl.OnEphemeralEvent {
-		oee(ctx, evt)
+	if !isProbe {
+		for _, oee := range rl.OnEphemeralEvent {
+			oee(ctx, evt)
+		}
 	}
 
 	return nil

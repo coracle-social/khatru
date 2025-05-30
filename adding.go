@@ -16,13 +16,13 @@ func (rl *Relay) AddEvent(ctx context.Context, evt *nostr.Event) (skipBroadcast 
 	}
 
 	if nostr.IsEphemeralKind(evt.Kind) {
-		return false, rl.handleEphemeral(ctx, evt)
+		return false, rl.handleEphemeral(ctx, evt, false)
 	} else {
-		return rl.handleNormal(ctx, evt)
+		return rl.handleNormal(ctx, evt, false)
 	}
 }
 
-func (rl *Relay) handleNormal(ctx context.Context, evt *nostr.Event) (skipBroadcast bool, writeError error) {
+func (rl *Relay) handleNormal(ctx context.Context, evt *nostr.Event, isProbe bool) (skipBroadcast bool, writeError error) {
 	for _, reject := range rl.RejectEvent {
 		if reject, msg := reject(ctx, evt); reject {
 			if msg == "" {
@@ -53,13 +53,15 @@ func (rl *Relay) handleNormal(ctx context.Context, evt *nostr.Event) (skipBroadc
 	// will store
 	// regular kinds are just saved directly
 	if nostr.IsRegularKind(evt.Kind) {
-		for _, store := range rl.StoreEvent {
-			if err := store(ctx, evt); err != nil {
-				switch err {
-				case eventstore.ErrDupEvent:
-					return true, nil
-				default:
-					return false, fmt.Errorf("%s", nostr.NormalizeOKMessage(err.Error(), "error"))
+		if !isProbe {
+			for _, store := range rl.StoreEvent {
+				if err := store(ctx, evt); err != nil {
+					switch err {
+					case eventstore.ErrDupEvent:
+						return true, nil
+					default:
+						return false, fmt.Errorf("%s", nostr.NormalizeOKMessage(err.Error(), "error"))
+					}
 				}
 			}
 		}
@@ -89,6 +91,10 @@ func (rl *Relay) handleNormal(ctx context.Context, evt *nostr.Event) (skipBroadc
 			}
 
 			return true, errors.New("blocked: this event has been deleted")
+		}
+
+		if isProbe {
+			return false, nil
 		}
 
 		// otherwise it's a replaceable -- so we'll use the replacer functions if we have any

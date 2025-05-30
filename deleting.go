@@ -9,7 +9,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-func (rl *Relay) handleDeleteRequest(ctx context.Context, evt *nostr.Event) error {
+func (rl *Relay) handleDeleteRequest(ctx context.Context, evt *nostr.Event, isProbe bool) error {
 	// event deletion -- nip09
 	for _, tag := range evt.Tags {
 		if len(tag) >= 2 {
@@ -60,7 +60,7 @@ func (rl *Relay) handleDeleteRequest(ctx context.Context, evt *nostr.Event) erro
 					acceptDeletion, msg = odo(ctx, target, evt)
 				}
 
-				if acceptDeletion {
+				if acceptDeletion && !isProbe {
 					// delete it
 					for _, del := range rl.DeleteEvent {
 						if err := del(ctx, target); err != nil {

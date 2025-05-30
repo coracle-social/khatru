@@ -162,6 +162,9 @@ func (rl *Relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 				switch env := envelope.(type) {
 				case *nostr.EventEnvelope:
+				case *ProbeEnvelope:
+					_, isProbe := envelope.(*ProbeEnvelope)
+
 					// check id
 					if !env.Event.CheckID() {
 						ws.WriteJSON(nostr.OKEnvelope{EventID: env.Event.ID, OK: false, Reason: "invalid: id is computed incorrectly"})
@@ -169,12 +172,14 @@ func (rl *Relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 					}
 
 					// check signature
-					if ok, err := env.Event.CheckSignature(); err != nil {
-						ws.WriteJSON(nostr.OKEnvelope{EventID: env.Event.ID, OK: false, Reason: "error: failed to verify signature"})
-						return
-					} else if !ok {
-						ws.WriteJSON(nostr.OKEnvelope{EventID: env.Event.ID, OK: false, Reason: "invalid: signature is invalid"})
-						return
+					if !isProbe {
+						if ok, err := env.Event.CheckSignature(); err != nil {
+							ws.WriteJSON(nostr.OKEnvelope{EventID: env.Event.ID, OK: false, Reason: "error: failed to verify signature"})
+							return
+						} else if !ok {
+							ws.WriteJSON(nostr.OKEnvelope{EventID: env.Event.ID, OK: false, Reason: "invalid: signature is invalid"})
+							return
+						}
 					}
 
 					// check NIP-70 protected
@@ -216,27 +221,31 @@ func (rl *Relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 					if env.Event.Kind == 5 {
 						// this always returns "blocked: " whenever it returns an error
-						writeErr = srl.handleDeleteRequest(ctx, &env.Event)
+						writeErr = srl.handleDeleteRequest(ctx, &env.Event, isProbe)
 					}
 
 					if writeErr == nil {
 						if nostr.IsEphemeralKind(env.Event.Kind) {
 							// this will also always return a prefixed reason
-							writeErr = srl.handleEphemeral(ctx, &env.Event)
+							writeErr = srl.handleEphemeral(ctx, &env.Event, isProbe)
 						} else {
 							// this will also always return a prefixed reason
-							skipBroadcast, writeErr = srl.handleNormal(ctx, &env.Event)
+							skipBroadcast, writeErr = srl.handleNormal(ctx, &env.Event, isProbe)
 						}
 					}
 
 					var reason string
+
 					if writeErr == nil {
 						ok = true
 						for _, ovw := range srl.OverwriteResponseEvent {
 							ovw(ctx, &env.Event)
 						}
 						if !skipBroadcast {
-							n := srl.notifyListeners(&env.Event)
+							var n int
+							if !isProbe {
+								n = srl.notifyListeners(&env.Event)
+							}
 
 							// the number of notified listeners matters in ephemeral events
 							if nostr.IsEphemeralKind(env.Event.Kind) {
@@ -251,7 +260,7 @@ func (rl *Relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 					} else {
 						ok = false
 						reason = writeErr.Error()
-						if strings.HasPrefix(reason, "auth-required:") {
+						if !isProbe && strings.HasPrefix(reason, "auth-required:") {
 							RequestAuth(ctx)
 						}
 					}
